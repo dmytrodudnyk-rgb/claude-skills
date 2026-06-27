@@ -33,7 +33,7 @@ Figure out *what* to review and pin the exact range. Review the **final state** 
 
 ## Step 2 — Run the review (multi-agent)
 
-This is a multi-agent fan-out, and invoking this skill is the user's opt-in — so **author and run a Workflow** (see `references/workflow-template.md` for a ready-to-adapt script). If the Workflow tool isn't available, fan out with parallel `Agent` calls following the same find → verify → compile shape.
+This is a multi-agent fan-out, and invoking this skill is the user's opt-in — so **author and run a Workflow** (see `references/workflow-template.md` for a ready-to-adapt script). Pass the verified context to the Workflow via its **`args`** field — never paste the diff, code, or PR description into the script source, since backticks and `${...}` in that content break the script. If the Workflow tool isn't available, fan out with parallel `Agent` calls following the same find → verify → compile shape.
 
 **Finders — one per lens, in parallel.** Each gets the diff range, the changed-file list, the *verified* context (what the code actually does — not the description), and one lens to hunt through:
 

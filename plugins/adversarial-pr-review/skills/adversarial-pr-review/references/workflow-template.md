@@ -2,7 +2,9 @@
 
 Adapt and run this with the `Workflow` tool. It implements the **find → refute** pipeline; you compile the final review in the main thread afterward.
 
-**Before running:** fill in `CONTEXT` with what you verified in Step 1 — the real diff command, how to read the final code, and what the code *actually does* (not the PR description). The quality of every agent depends on this being accurate and grounded.
+**Before running:** pass your verified Step-1 context as the Workflow **`args`** field — a single string covering the real diff command, how to read the final code, and what the code *actually does* (not the PR description). The quality of every agent depends on this being accurate and grounded.
+
+> ⚠️ **Pass context via `args`, never paste it into the script.** Diffs, code snippets, and PR descriptions routinely contain backticks (`` ` ``) and `${...}`. Inlining them into the script's template literals terminates the literal early and breaks the whole script. The `args` value is delivered to the script verbatim as structured JSON, so any content — backticks included — is safe.
 
 **Shape:**
 - `pipeline(DIMENSIONS, finder, verify)` — each lens's findings are refuted as soon as that lens finishes (no barrier).
@@ -17,13 +19,15 @@ export const meta = {
   phases: [{ title: 'Review' }, { title: 'Verify' }, { title: 'Approach' }],
 }
 
-const CONTEXT = `
-<FILL IN — verified in Step 1:>
-- What is reviewed (PR/branch) and the exact diff command.
-- How to read the FINAL code without checking out (git show <ref>:<path>, git grep ...).
-- What the code ACTUALLY does — do NOT trust the PR description.
-- Any known-stale or contradicted claims in the description.
-`
+// Verified Step-1 context, passed via the Workflow `args` field (NOT inlined) so that
+// content containing backticks or ${...} can't break the script. Pass either a plain
+// string, or an object { context: "..." }. It should cover:
+//   - What is reviewed (PR/branch) and the exact diff command.
+//   - How to read the FINAL code without checking out (git show <ref>:<path>, git grep ...).
+//   - What the code ACTUALLY does — do NOT trust the PR description.
+//   - Any known-stale or contradicted claims in the description.
+const CONTEXT = typeof args === 'string' ? args : (args && args.context) || ''
+if (!CONTEXT) throw new Error('Pass verified Step-1 context via the Workflow `args` field (a string, or { context: "..." }).')
 
 // Shared severity rubric — floors (so real defects aren't shaved) + caps (so nothing is inflated).
 const SEVERITY_RUBRIC = `
