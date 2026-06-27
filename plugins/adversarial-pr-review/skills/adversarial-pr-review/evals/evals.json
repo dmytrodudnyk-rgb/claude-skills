@@ -1,0 +1,34 @@
+{
+  "skill_name": "adversarial-pr-review",
+  "evals": [
+    {
+      "id": 0,
+      "name": "real-pr-6304-epki",
+      "prompt": "Do a thorough, adversarial review of this PR: branch origin/feat/certificate targeting feat/macos-sys-ext (already fetched locally), focused on the certificate feature. Read the PR description but verify against the code.",
+      "files": ["git ref origin/feat/certificate (EPKI files: pkcs11/index.ts, alias.ts, CtkToken.mm, OVPNKeychainHelper.mm, CoreVpnClient.cpp, SystemTunnelAdapter.mm, migrations.js)"],
+      "assertions": [
+        {"name": "found_single_identity_rebind", "text": "Surfaces the resolveCtkKeyid single-identity fallback that silently rebinds a profile to an unverified cert (desktop/src/main/pkcs11/index.ts)."},
+        {"name": "found_uaf", "text": "Surfaces the use-after-free: caller-stack out-param written by a late NSXPC reply/error block in the sync agent helpers (OVPNKeychainHelper.mm)."},
+        {"name": "found_alias_dispatch", "text": "Surfaces the EPKI alias dispatch problem in CoreVpnClient.cpp: two independent if-ladders that must stay lock-step and/or the silent keychain fallthrough on an unrecognized alias."},
+        {"name": "flagged_stale_description", "text": "Notes that the PR description describes a superseded/reverted design and should be reviewed against the final code."},
+        {"name": "killed_frozen_state_fp", "text": "Does NOT assert as a real bug that migration 70 throws on frozen state (FP: migrations run pre-hydration)."},
+        {"name": "killed_unique_ptr_fp", "text": "Does NOT assert as a real bug a provideCredentials unique_ptr data race introduced by this PR (FP: pre-existing, untouched)."},
+        {"name": "severity_calibrated", "text": "The use-after-free is rated medium (not high — narrow trigger) and the userAgentConnection atomicity item, if present, is rated low/nit (mitigated by the retry path) — i.e. severity is calibrated, not inflated."},
+        {"name": "grounded_file_line", "text": "Findings reference concrete file:line or function names."}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "synthetic-connection-pool",
+      "prompt": "Do a thorough review of this PR adding an async connection pool. Code at <inputs>/connectionPool.ts, PR description at <inputs>/PR_DESCRIPTION.md. Read the description but verify against the code.",
+      "files": ["inputs/connection-pool/connectionPool.ts", "inputs/connection-pool/PR_DESCRIPTION.md"],
+      "assertions": [
+        {"name": "found_cap_race", "text": "Identifies that acquire()'s `conns.length >= MAX` check followed by openConn()'s `await handshake` before `conns.push` lets two concurrent acquire() calls both pass the check and exceed MAX (check-then-await race breaking the cap invariant)."},
+        {"name": "found_lastused_stale", "text": "Identifies that release() does not update lastUsed, so closeIdle() measures idleness from acquire time — a long-in-use connection released now is immediately eligible for eviction (wrong idle accounting)."},
+        {"name": "killed_iterate_filter_fp", "text": "Does NOT report closeIdle()'s `conns = conns.filter(...)` as a concurrent-modification-during-iteration bug — the for...of loop completes before the reassignment, so it is safe. (false-positive trap)"},
+        {"name": "severity_calibrated", "text": "Severity is calibrated: the cap race / idle-accounting bugs are medium-ish (real but bounded), nothing is over-rated critical, and the trap is not present as a finding."},
+        {"name": "grounded_file_line", "text": "Findings reference concrete lines or functions in connectionPool.ts."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "adversarial-pr-review",
+  "description": "Expensive, opt-in multi-agent adversarial code review of a PR, diff, or branch.",
+  "author": {
+    "name": "Dmytro Dudnyk",
+    "email": "dmytro.dudnyk@openvpn.com"
+  }
+}
