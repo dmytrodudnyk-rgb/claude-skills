@@ -104,16 +104,24 @@ phase('Review')
 const approachP = agent(
   `${CONTEXT}\nReview the ENTIRE approach at a high altitude: is it sound? could it be simpler? Trace the real call paths, weigh alternatives, cite code. Return via schema only.`,
   { label: 'approach', phase: 'Approach', schema: APPROACH_SCHEMA, effort: 'high' })
+  .catch((e) => { log(`⚠ approach reviewer failed — design section omitted: ${e?.message ?? e}`); return null })
+// ^ EVERY awaited agent MUST be catch-guarded. A terminal agent failure (StructuredOutput retry-cap
+//   exceeded, or a terminal API error after retries) rejects its promise; an uncaught rejection that
+//   reaches a top-level `await` aborts the ENTIRE run and discards all completed agents (recoverable
+//   only via resumeFromRunId). The catch SURFACES the cause via log() — visible live in /workflows
+//   and captured in result.logs — then degrades the one failed piece to null. Never silently
+//   swallowed (don't `.catch(() => null)`), never a whole-run crash.
 
 const reviewed = await pipeline(
   DIMENSIONS,
-  (d) => agent(d.prompt, { label: `find:${d.key}`, phase: 'Review', schema: FINDINGS_SCHEMA, effort: 'high' }),
+  (d) => agent(d.prompt, { label: `find:${d.key}`, phase: 'Review', schema: FINDINGS_SCHEMA, effort: 'high' })
+    .catch((e) => { log(`⚠ finder lens "${d.key}" failed — lens skipped: ${e?.message ?? e}`); return null }),
   (res, d) => {
     if (!res || !res.findings || !res.findings.length) return { dimension: d.key, findings: [] }
     return parallel(res.findings.slice(0, 18).map((f) => () =>
       agent(verifyPrompt(f, d.key), { label: `verify:${d.key}:${f.id}`, phase: 'Verify', schema: VERDICT_SCHEMA, effort: 'high' })
         .then((v) => ({ ...f, dimension: d.key, verdict: v }))
-        .catch(() => ({ ...f, dimension: d.key, verdict: null }))
+        .catch((e) => { log(`⚠ verify ${d.key}:${f.id} failed — finding kept, unverified: ${e?.message ?? e}`); return { ...f, dimension: d.key, verdict: null } })
     )).then((vs) => ({ dimension: d.key, findings: vs.filter(Boolean) }))
   })
 
@@ -123,11 +131,15 @@ return { reviewed, approach }
 
 ## After it returns
 
-1. Flatten `reviewed[].findings`. Drop `verdict.verdict === 'false_positive'` — but spot-check the borderline ones yourself; you may have context the skeptic missed (e.g. a cross-module backstop).
+1. Flatten `reviewed[].findings` (a lens whose finder died is an empty `findings` array — skip it). Drop `verdict.verdict === 'false_positive'` — but spot-check the borderline ones yourself; you may have context the skeptic missed (e.g. a cross-module backstop).
 2. Dedup findings that surface under multiple lenses.
 3. **Use `verdict.correctedSeverity` as the final severity — do not re-rate.** Note `orig→corrected` when it changed.
-4. Fold in the `approach` output as the design verdict + simplifications.
+4. Fold in the `approach` output as the design verdict + simplifications — but it may be `null` (that agent failed); if so, just omit the design section rather than blocking the review.
 5. Compile per `references/review-format.md`.
+
+## When an agent fails
+
+The `.catch` guards above turn a single agent's terminal failure into a `null` instead of a crash, and each **surfaces** the cause via `log()` — it shows live in `/workflows` and lands in the returned `result.logs`, never swallowed. When you compile, disclose a skipped lens or unverified finding (per "Report what you dropped") rather than letting a silent gap pass for clean coverage. If a whole run still dies (script error, abort, kill), **don't re-run from scratch** — relaunch with `Workflow({scriptPath, resumeFromRunId})`: the journal returns every completed `agent()` call from cache instantly and only re-runs the failed/edited ones, so you recover the expensive work for free.
 
 ## Scaling knobs
 
