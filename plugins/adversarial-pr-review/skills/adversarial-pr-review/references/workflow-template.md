@@ -4,7 +4,9 @@ Adapt and run this with the `Workflow` tool. It implements the **find → refute
 
 **Before running:** pass your verified Step-1 context as the Workflow **`args`** field — a single string covering the real diff command, how to read the final code, and what the code *actually does* (not the PR description). The quality of every agent depends on this being accurate and grounded.
 
-> ⚠️ **Pass context via `args`, never paste it into the script.** Diffs, code snippets, and PR descriptions routinely contain backticks (`` ` ``) and `${...}`. Inlining them into the script's template literals terminates the literal early and breaks the whole script. The `args` value is delivered to the script verbatim as structured JSON, so any content — backticks included — is safe.
+> ⚠️ **Pass context via `args`, never paste it into the script.** Diffs, code snippets, and PR descriptions routinely contain backticks (`` ` ``) and `${...}`. Inlining them into the script's template literals terminates the literal early and breaks the whole script. The `args` value never becomes part of the script source, so any content — backticks included — is safe.
+>
+> ⚠️ **`args` always reaches the script as a STRING.** A plain string passes through verbatim; an object/array you pass in the tool call arrives **JSON-encoded** (e.g. `'{"context":"…"}'`), *not* as a live object — so reading `args.context` directly yields `undefined` and `args.map(...)` throws. The script must `JSON.parse` it first. The `readContext()` helper below does this for you; a hand-rolled script must do the same (`const ctx = typeof args === 'string' ? JSON.parse(args) : args`).
 
 **Shape:**
 - `pipeline(DIMENSIONS, finder, verify)` — each lens's findings are refuted as soon as that lens finishes (no barrier).
@@ -26,8 +28,22 @@ export const meta = {
 //   - How to read the FINAL code without checking out (git show <ref>:<path>, git grep ...).
 //   - What the code ACTUALLY does — do NOT trust the PR description.
 //   - Any known-stale or contradicted claims in the description.
-const CONTEXT = typeof args === 'string' ? args : (args && args.context) || ''
-if (!CONTEXT) throw new Error('Pass verified Step-1 context via the Workflow `args` field (a string, or { context: "..." }).')
+//
+// `args` ALWAYS arrives as a string: a plain string passes through verbatim; an object/array
+// arrives JSON-encoded. readContext() normalizes all shapes (and won't throw on a plain string
+// that merely looks non-JSON). A rich object with no `context` field degrades to its JSON dump
+// rather than crashing.
+function readContext(a) {
+  let v = a
+  if (typeof v === 'string' && /^\s*[[{]/.test(v)) {
+    try { v = JSON.parse(v) } catch { /* not JSON — treat as a plain context string */ }
+  }
+  if (typeof v === 'string') return v
+  if (v && typeof v === 'object') return v.context || JSON.stringify(v, null, 2)
+  return ''
+}
+const CONTEXT = readContext(args)
+if (!CONTEXT) throw new Error('Pass verified Step-1 context via the Workflow `args` field (a plain string, or an object like { context: "..." }).')
 
 // Shared severity rubric — floors (so real defects aren't shaved) + caps (so nothing is inflated).
 const SEVERITY_RUBRIC = `
